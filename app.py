@@ -9,7 +9,7 @@ import pymysql
 from db import get_connection, serialize_row, serialize_rows
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FERRO_SECRET_KEY", "ferro-y-session-secret-2026")
+app.secret_key = os.environ.get("SAUNA_SECRET_KEY", "sauna-session-secret-2026")
 
 ALLOWED_TABLES = {
     "publishers",
@@ -753,7 +753,7 @@ def checkout(user_id):
         return err
     data = request.get_json(force=True) or {}
     game_ids = [int(g) for g in (data.get("game_ids") or [])]
-    payment_method = (data.get("payment_method") or "FERRO Y Wallet").strip()
+    payment_method = (data.get("payment_method") or "SAUNA Wallet").strip()
     if not game_ids:
         return _error("Select at least one game to purchase.")
 
@@ -807,7 +807,7 @@ def checkout(user_id):
         cur.execute(
             "INSERT INTO ORDERS (user_id, total_amount, payment_method, status) "
             "VALUES (%s, %s, %s, 'completed')",
-            (uid, total, "FERRO Y Wallet"),
+            (uid, total, "SAUNA Wallet"),
         )
         order_id = cur.lastrowid
 

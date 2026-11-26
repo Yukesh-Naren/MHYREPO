@@ -1,4 +1,4 @@
-# FERRO Y — Game Store & MySQL Platform
+# SAUNA — Digital Game Store & Publisher Portal
 
 A full-stack **MySQL 8.4** database and **Flask** web frontend built directly from [`steam_er_diagram.png`](steam_er_diagram.png).
 

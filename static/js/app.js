@@ -271,7 +271,7 @@ async function loadMeta() {
   const activeSales = state.meta.sales.filter((s) => s.is_active);
   document.getElementById("activeSaleBanner").textContent = activeSales.length
     ? `Active Event: ${activeSales.map((s) => s.title).join(", ")} — Seasonal discounts live now!`
-    : "Browse the FERRO Y catalog, build your library, or sign in as a Publisher to release titles.";
+    : "Browse the SAUNA catalog, build your library, or sign in as a Publisher to release titles.";
 }
 
 async function loadGames() {
@@ -748,7 +748,7 @@ async function buySingleGame(gameId) {
   try {
     const res = await api(`/api/users/${state.activeUserId}/checkout`, {
       method: "POST",
-      body: JSON.stringify({ game_ids: [gameId], payment_method: "FERRO Y Wallet" }),
+      body: JSON.stringify({ game_ids: [gameId], payment_method: "SAUNA Wallet" }),
     });
     state.walletBalance = Number(res.wallet_balance);
     document.getElementById("walletChip").textContent = moneyExact(state.walletBalance);
@@ -1182,7 +1182,7 @@ function bindEvents() {
         method: "POST",
         body: JSON.stringify({
           game_ids: state.cart.map((g) => g.game_id),
-          payment_method: "FERRO Y Wallet",
+          payment_method: "SAUNA Wallet",
         }),
       });
       state.cart = [];
