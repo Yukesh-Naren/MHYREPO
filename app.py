@@ -10,6 +10,7 @@ from db import get_connection, serialize_row, serialize_rows
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SAUNA_SECRET_KEY", "sauna-session-secret-2026")
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 ALLOWED_TABLES = {
     "publishers",
