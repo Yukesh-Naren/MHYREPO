@@ -25,12 +25,12 @@ function gameBannerUrl(gameId, title = "") {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function showLoginIdBanner(userId, messagePrefix = "Signed in!") {
+function showLoginIdBanner(username, messagePrefix = "Signed in!") {
   const el = document.getElementById("loginIdNotice");
   if (!el) return;
   el.innerHTML = `
     <div>
-      <strong>${esc(messagePrefix)}</strong> Your Login ID is <code>#${userId}</code> — use <code>${userId}</code> with your password to log in anytime.
+      <strong>${esc(messagePrefix)}</strong> Signed in as <code>${esc(username)}</code>.
     </div>
     <button class="btn-sm btn-ghost" onclick="document.getElementById('loginIdNotice').classList.add('hidden')">Dismiss</button>
   `;
@@ -126,9 +126,9 @@ async function loadAuthSession() {
     document.getElementById("badgeWishlist").textContent = "0";
     document.getElementById("badgeFriends").textContent = "0";
     const heroLine = document.getElementById("heroLoginIdLine");
-    if (heroLine) heroLine.textContent = "Not logged in — click Login or Register to get your Login ID.";
+    if (heroLine) heroLine.textContent = "Not logged in — click Login or Register to sign in.";
     document.getElementById("userQuickStats").innerHTML = `
-      <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Login ID Required</span></div>
+      <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Sign in to play</span></div>
     `;
     return;
   }
@@ -139,17 +139,17 @@ async function loadAuthSession() {
   loggedInEl.classList.remove("hidden");
 
   const bal = moneyExact(data.user.wallet_balance);
-  document.getElementById("memberIdPill").textContent = `Login ID: #${data.user.user_id}`;
+  document.getElementById("memberIdPill").textContent = `User: ${data.user.username}`;
   document.getElementById("walletChip").textContent = bal;
   document.getElementById("walletBig").textContent = bal;
   document.getElementById("badgeLibrary").textContent = data.stats.owned_games;
   document.getElementById("badgeWishlist").textContent = data.stats.wishlist_count;
   document.getElementById("badgeFriends").textContent = data.stats.friend_count;
   const heroLine = document.getElementById("heroLoginIdLine");
-  if (heroLine) heroLine.innerHTML = `Active Session · <strong>Login ID: #${data.user.user_id}</strong>`;
+  if (heroLine) heroLine.innerHTML = `Active Session · Signed in as <strong>${esc(data.user.username)}</strong>`;
 
   document.getElementById("userQuickStats").innerHTML = `
-    <div class="stat-pill"><span class="val">#${data.user.user_id}</span><span class="lbl">Login ID</span></div>
+    <div class="stat-pill"><span class="val">${esc(data.user.username)}</span><span class="lbl">Username</span></div>
     <div class="stat-pill"><span class="val">${data.stats.owned_games}</span><span class="lbl">Games Owned</span></div>
     <div class="stat-pill"><span class="val">${Math.round(data.stats.total_playtime_minutes / 60)}h</span><span class="lbl">Playtime</span></div>
     <div class="stat-pill"><span class="val">${data.stats.unlocked_achievements}</span><span class="lbl">Achievements</span></div>
@@ -895,8 +895,8 @@ function bindEvents() {
       state.cart = [];
       updateCartBadge();
       await refreshUserData();
-      showLoginIdBanner(res.user_id, "Logged in!");
-      toast(`Logged in! Login ID: #${res.user_id}`);
+      showLoginIdBanner(res.username, "Logged in!");
+      toast(`Logged in as ${res.username}!`);
     } catch (err) {
       toast(err.message, true);
     }
@@ -915,8 +915,8 @@ function bindEvents() {
       state.cart = [];
       updateCartBadge();
       await refreshUserData();
-      showLoginIdBanner(res.user_id, "Account Created!");
-      toast(`Account created! Your Login ID is #${res.user_id}.`);
+      showLoginIdBanner(res.username, "Account Created!");
+      toast(`Account created! Welcome, ${res.username}.`);
     } catch (err) {
       toast(err.message, true);
     }

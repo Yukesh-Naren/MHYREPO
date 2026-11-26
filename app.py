@@ -118,6 +118,7 @@ def auth_login():
         return jsonify({
             "authenticated": True,
             "user_id": int(user["user_id"]),
+            "username": user["username"],
             "wallet_balance": float(user["wallet_balance"]),
             "country": user["country"],
         })
@@ -157,6 +158,7 @@ def auth_register():
         return jsonify({
             "authenticated": True,
             "user_id": int(user_id),
+            "username": username,
             "wallet_balance": float(wallet),
             "country": country,
         }), 201
@@ -176,7 +178,7 @@ def auth_me():
 
     with db_cursor() as (_, cur):
         cur.execute(
-            "SELECT user_id, wallet_balance, country, created_at FROM USERS WHERE user_id = %s",
+            "SELECT user_id, username, wallet_balance, country, created_at FROM USERS WHERE user_id = %s",
             (int(uid),),
         )
         user = cur.fetchone()
