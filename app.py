@@ -1198,6 +1198,17 @@ def list_db_tables():
         return jsonify(tables)
 
 
+def _mask_admin_rows(rows, mask_txn_amount=False):
+    masked_cols = {"password_hash", "wallet_balance"}
+    if mask_txn_amount:
+        masked_cols.add("amount")
+    for r in rows:
+        for col in list(r.keys()):
+            if col.lower() in masked_cols:
+                r[col] = "********"
+    return rows
+
+
 @app.route("/api/db/tables/<table_name>", methods=["GET"])
 def inspect_table(table_name):
     _, err = _require_admin()
@@ -1209,11 +1220,10 @@ def inspect_table(table_name):
     limit = min(int(request.args.get("limit", 100)), 500)
     with db_cursor() as (_, cur):
         cur.execute(f"SELECT * FROM `{tbl}` LIMIT %s", (limit,))
-        rows = serialize_rows(cur.fetchall())
-        if tbl == "users":
-            for r in rows:
-                if "password_hash" in r:
-                    r["password_hash"] = "********"
+        rows = _mask_admin_rows(
+            serialize_rows(cur.fetchall()),
+            mask_txn_amount=(tbl == "wallet_transactions"),
+        )
         cols = [d[0] for d in cur.description] if cur.description else []
         return jsonify({"table_name": tbl.upper(), "columns": cols, "rows": rows})
 
@@ -1233,10 +1243,16 @@ def run_readonly_query():
         return _error("SQL Explorer only allows read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH).")
     if ";" in stripped[:-1]:
         return _error("Only a single SQL statement is allowed per query.")
+    if re.search(r"\b(wallet_balance|password_hash)\b", stripped, flags=re.I):
+        return _error("Wallet balance and password hash are masked for Platform Admin.", 403)
 
     with db_cursor() as (_, cur):
         cur.execute(stripped)
-        rows = serialize_rows(cur.fetchmany(200))
+        mentions_wallet_txn = bool(re.search(r"\bwallet_transactions\b", stripped, flags=re.I))
+        rows = _mask_admin_rows(
+            serialize_rows(cur.fetchmany(200)),
+            mask_txn_amount=mentions_wallet_txn,
+        )
         cols = [d[0] for d in cur.description] if cur.description else []
         return jsonify({"columns": cols, "rows": rows, "row_count": len(rows)})
 
