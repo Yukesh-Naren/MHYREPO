@@ -1,5 +1,9 @@
 const state = {
   activeUserId: null,
+  username: null,
+  role: null,
+  publisherId: null,
+  publisherName: null,
   walletBalance: 0,
   meta: { publishers: [], developers: [], tags: [], sales: [], sale_items: [] },
   games: [],
@@ -25,12 +29,14 @@ function gameBannerUrl(gameId, title = "") {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function showLoginIdBanner(username, messagePrefix = "Signed in!") {
+function showAccountBanner(res, messagePrefix = "Signed in!") {
   const el = document.getElementById("loginIdNotice");
   if (!el) return;
+  const roleLabel = res.role === "publisher" ? "Publisher" : "User";
+  const studioInfo = res.publisher_name ? ` · Studio: <strong>${esc(res.publisher_name)}</strong>` : "";
   el.innerHTML = `
     <div>
-      <strong>${esc(messagePrefix)}</strong> Signed in as <code>${esc(username)}</code>.
+      <strong>${esc(messagePrefix)}</strong> Signed in as <code>${esc(res.username)}</code> (${roleLabel}${studioInfo}).
     </div>
     <button class="btn-sm btn-ghost" onclick="document.getElementById('loginIdNotice').classList.add('hidden')">Dismiss</button>
   `;
@@ -95,6 +101,16 @@ function closeModal(id) {
   document.getElementById(id).classList.add("hidden");
 }
 
+function switchTab(tabName) {
+  document.querySelectorAll(".nav-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach((p) => {
+    p.classList.toggle("active", p.id === `tab-${tabName}`);
+  });
+  if (tabName === "db") loadDbTables();
+}
+
 function updateCartBadge() {
   document.getElementById("cartCount").textContent = state.cart.length;
 }
@@ -103,13 +119,28 @@ function loginGuardHtml(sectionName) {
   return `
     <div class="card">
       <h3>Login Required</h3>
-      <p class="muted">Please log in with your Member ID and password to access ${esc(sectionName)}.</p>
+      <p class="muted">Please log in as a User to access ${esc(sectionName)}.</p>
       <div class="card-actions mt-md">
         <button class="btn btn-primary" onclick="openModal('loginModal')">Login</button>
         <button class="btn btn-secondary" onclick="openModal('registerModal')">Register</button>
       </div>
     </div>
   `;
+}
+
+function applyRoleVisibility() {
+  const isPub = state.role === "publisher";
+  document.querySelectorAll(".user-only-nav").forEach((el) => {
+    el.classList.toggle("hidden", isPub);
+  });
+  document.querySelectorAll(".publisher-only-nav").forEach((el) => {
+    el.classList.toggle("hidden", !isPub);
+  });
+
+  const activeBtn = document.querySelector(".nav-btn.active");
+  if (activeBtn && activeBtn.classList.contains("hidden")) {
+    switchTab("store");
+  }
 }
 
 async function loadAuthSession() {
@@ -119,41 +150,72 @@ async function loadAuthSession() {
 
   if (!data.authenticated || !data.user) {
     state.activeUserId = null;
+    state.username = null;
+    state.role = null;
+    state.publisherId = null;
+    state.publisherName = null;
     state.walletBalance = 0;
+
     loggedOutEl.classList.remove("hidden");
     loggedInEl.classList.add("hidden");
     document.getElementById("badgeLibrary").textContent = "0";
     document.getElementById("badgeWishlist").textContent = "0";
     document.getElementById("badgeFriends").textContent = "0";
     const heroLine = document.getElementById("heroLoginIdLine");
-    if (heroLine) heroLine.textContent = "Not logged in — click Login or Register to sign in.";
+    if (heroLine) heroLine.textContent = "Not logged in — sign in as a User or Publisher.";
     document.getElementById("userQuickStats").innerHTML = `
       <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Sign in to play</span></div>
     `;
+    applyRoleVisibility();
     return;
   }
 
   state.activeUserId = data.user.user_id;
+  state.username = data.user.username;
+  state.role = data.user.role || "user";
+  state.publisherId = data.user.publisher_id;
+  state.publisherName = data.user.publisher_name;
   state.walletBalance = Number(data.user.wallet_balance || 0);
+
   loggedOutEl.classList.add("hidden");
   loggedInEl.classList.remove("hidden");
 
+  const roleBadge = document.getElementById("roleBadgePill");
+  roleBadge.textContent = state.role === "publisher" ? "PUBLISHER" : "USER";
+  roleBadge.classList.toggle("publisher", state.role === "publisher");
+
   const bal = moneyExact(data.user.wallet_balance);
-  document.getElementById("memberIdPill").textContent = `User: ${data.user.username}`;
   document.getElementById("walletChip").textContent = bal;
   document.getElementById("walletBig").textContent = bal;
-  document.getElementById("badgeLibrary").textContent = data.stats.owned_games;
-  document.getElementById("badgeWishlist").textContent = data.stats.wishlist_count;
-  document.getElementById("badgeFriends").textContent = data.stats.friend_count;
-  const heroLine = document.getElementById("heroLoginIdLine");
-  if (heroLine) heroLine.innerHTML = `Active Session · Signed in as <strong>${esc(data.user.username)}</strong>`;
 
-  document.getElementById("userQuickStats").innerHTML = `
-    <div class="stat-pill"><span class="val">${esc(data.user.username)}</span><span class="lbl">Username</span></div>
-    <div class="stat-pill"><span class="val">${data.stats.owned_games}</span><span class="lbl">Games Owned</span></div>
-    <div class="stat-pill"><span class="val">${Math.round(data.stats.total_playtime_minutes / 60)}h</span><span class="lbl">Playtime</span></div>
-    <div class="stat-pill"><span class="val">${data.stats.unlocked_achievements}</span><span class="lbl">Achievements</span></div>
-  `;
+  const heroLine = document.getElementById("heroLoginIdLine");
+  if (state.role === "publisher") {
+    document.getElementById("memberIdPill").textContent = `${data.user.publisher_name || "Publisher"} (${data.user.username})`;
+    if (heroLine) {
+      heroLine.innerHTML = `Publisher Session · <strong>${esc(data.user.username)}</strong> (${esc(data.user.publisher_name || "Studio")})`;
+    }
+    document.getElementById("userQuickStats").innerHTML = `
+      <div class="stat-pill"><span class="val">${esc(data.user.username)}</span><span class="lbl">Publisher</span></div>
+      <div class="stat-pill"><span class="val">${esc(data.user.publisher_name || "Studio")}</span><span class="lbl">Studio</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.published_games || 0}</span><span class="lbl">Published Titles</span></div>
+    `;
+  } else {
+    document.getElementById("memberIdPill").textContent = `User: ${data.user.username}`;
+    document.getElementById("badgeLibrary").textContent = data.stats.owned_games;
+    document.getElementById("badgeWishlist").textContent = data.stats.wishlist_count;
+    document.getElementById("badgeFriends").textContent = data.stats.friend_count;
+    if (heroLine) {
+      heroLine.innerHTML = `Player Session · Signed in as <strong>${esc(data.user.username)}</strong>`;
+    }
+    document.getElementById("userQuickStats").innerHTML = `
+      <div class="stat-pill"><span class="val">${esc(data.user.username)}</span><span class="lbl">Username</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.owned_games}</span><span class="lbl">Games Owned</span></div>
+      <div class="stat-pill"><span class="val">${Math.round(data.stats.total_playtime_minutes / 60)}h</span><span class="lbl">Playtime</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.unlocked_achievements}</span><span class="lbl">Achievements</span></div>
+    `;
+  }
+
+  applyRoleVisibility();
 }
 
 async function loadMeta() {
@@ -174,7 +236,6 @@ async function loadMeta() {
   devSelect.innerHTML = `<option value="">All Developers</option>` + state.meta.developers.map((d) => `<option value="${d.developer_id}">${esc(d.name)}</option>`).join("");
   devSelect.value = prevDev;
 
-  document.getElementById("managePubSelect").innerHTML = state.meta.publishers.map((p) => `<option value="${p.publisher_id}">${esc(p.name)}</option>`).join("");
   document.getElementById("manageDevSelect").innerHTML = state.meta.developers.map((d) => `<option value="${d.developer_id}">${esc(d.name)}</option>`).join("");
   document.getElementById("manageTagCheckboxes").innerHTML = state.meta.tags
     .map((t) => `<label class="checkbox-pill"><input type="checkbox" name="tag_ids" value="${t.tag_id}" /><span>${esc(t.name)}</span></label>`)
@@ -185,8 +246,8 @@ async function loadMeta() {
 
   const activeSales = state.meta.sales.filter((s) => s.is_active);
   document.getElementById("activeSaleBanner").textContent = activeSales.length
-    ? `Active Event: ${activeSales.map((s) => s.title).join(", ")} — Live discounts applied from MySQL!`
-    : "Browse the FERRO Y catalog, log in with your Member ID, and inspect all 17 MySQL ER tables.";
+    ? `Active Event: ${activeSales.map((s) => s.title).join(", ")} — Seasonal discounts live now!`
+    : "Browse the FERRO Y catalog, build your library, or sign in as a Publisher to release titles.";
 }
 
 async function loadGames() {
@@ -205,12 +266,6 @@ async function loadGames() {
   state.games = await api(`/api/games?${params.toString()}`);
   renderFeaturedSpotlight();
   renderGames();
-
-  if (!q && !tag && !pub && !dev && !onSale) {
-    const opts = state.games.map((g) => `<option value="${g.game_id}">${esc(g.title)}</option>`).join("");
-    document.getElementById("manageSaleGameSelect").innerHTML = opts;
-    document.getElementById("manageAchGameSelect").innerHTML = opts;
-  }
 }
 
 function cycleSpotlight(delta) {
@@ -234,12 +289,18 @@ function renderFeaturedSpotlight() {
   const g = list[state.spotlightIdx];
   const bannerUrl = gameBannerUrl(g.game_id, g.title);
   const inCart = state.cart.some((c) => c.game_id === g.game_id);
+  const isPub = state.role === "publisher";
 
-  const actionBtn = g.owned
-    ? `<span class="tag-chip">In Library</span>`
-    : inCart
-    ? `<button class="btn-sm btn-secondary" onclick="removeFromCart(${g.game_id})">In Cart</button>`
-    : `<button class="btn-sm btn-sale" onclick="addToCart(${g.game_id})">Add to Cart · ${money(g.effective_price)}</button>`;
+  let actionBtn = "";
+  if (isPub) {
+    actionBtn = "";
+  } else if (g.owned) {
+    actionBtn = `<span class="tag-chip">In Library</span>`;
+  } else if (inCart) {
+    actionBtn = `<button class="btn-sm btn-secondary" onclick="removeFromCart(${g.game_id})">In Cart</button>`;
+  } else {
+    actionBtn = `<button class="btn-sm btn-sale" onclick="addToCart(${g.game_id})">Add to Cart · ${money(g.effective_price)}</button>`;
+  }
 
   box.classList.remove("hidden");
   box.innerHTML = `
@@ -276,6 +337,8 @@ function renderGames() {
     grid.innerHTML = `<div class="card">No games match your current filters.</div>`;
     return;
   }
+  const isPub = state.role === "publisher";
+
   grid.innerHTML = state.games
     .map((g) => {
       const inCart = state.cart.some((c) => c.game_id === g.game_id);
@@ -290,19 +353,23 @@ function renderGames() {
           : `<span class="price-final">${money(g.effective_price)}</span>`;
 
       let actionBtn = "";
-      if (g.owned) {
-        actionBtn = `<span class="tag-chip">In Library</span>`;
-      } else if (inCart) {
-        actionBtn = `<button class="btn-sm btn-secondary" onclick="removeFromCart(${g.game_id})">In Cart</button>`;
+      let wishBtn = "";
+      if (isPub) {
+        actionBtn = `<button class="btn-sm btn-secondary" onclick="openGameDetail(${g.game_id})">View</button>`;
       } else {
-        actionBtn = `<button class="btn-sm btn-sale" onclick="addToCart(${g.game_id})">Add to Cart</button>`;
+        if (g.owned) {
+          actionBtn = `<span class="tag-chip">In Library</span>`;
+        } else if (inCart) {
+          actionBtn = `<button class="btn-sm btn-secondary" onclick="removeFromCart(${g.game_id})">In Cart</button>`;
+        } else {
+          actionBtn = `<button class="btn-sm btn-sale" onclick="addToCart(${g.game_id})">Add to Cart</button>`;
+        }
+        wishBtn = g.owned
+          ? ""
+          : `<button class="btn-sm btn-ghost" onclick="toggleWishlist(${g.game_id}, ${g.wishlisted ? "true" : "false"})">${
+              g.wishlisted ? "★ Wishlisted" : "☆ Wishlist"
+            }</button>`;
       }
-
-      const wishBtn = g.owned
-        ? ""
-        : `<button class="btn-sm btn-ghost" onclick="toggleWishlist(${g.game_id}, ${g.wishlisted ? "true" : "false"})">${
-            g.wishlisted ? "★ Wishlisted" : "☆ Wishlist"
-          }</button>`;
 
       return `
         <article class="game-card">
@@ -338,15 +405,20 @@ async function openGameDetail(gameId) {
   const g = await api(`/api/games/${gameId}`);
   const wrap = document.getElementById("gameModalContent");
   const inCart = state.cart.some((c) => c.game_id === g.game_id);
+  const isPub = state.role === "publisher";
 
-  const buyBtn = g.owned
+  const buyBtn = isPub
+    ? `<span class="tag-chip">Publisher View</span>`
+    : g.owned
     ? `<span class="tag-chip">Owned in Library</span>`
     : inCart
     ? `<button class="btn btn-secondary" onclick="removeFromCart(${g.game_id}); openGameDetail(${g.game_id})">Remove from Cart</button>`
     : `<button class="btn btn-sale" onclick="addToCart(${g.game_id}); openGameDetail(${g.game_id})">Add to Cart · ${money(g.effective_price)}</button>`;
 
-  const reviewFormHtml = !state.activeUserId
-    ? `<p class="muted small mt-sm">Log in to post a review.</p>`
+  const reviewFormHtml = isPub
+    ? `<p class="muted small mt-sm">Switch to a User account to write player reviews.</p>`
+    : !state.activeUserId
+    ? `<p class="muted small mt-sm">Log in as a User to post a review.</p>`
     : g.owned
     ? `
       <form id="submitReviewForm" class="form-stack mt-md" onsubmit="submitReview(event, ${g.game_id})">
@@ -396,7 +468,7 @@ async function openGameDetail(gameId) {
                   ${
                     a.unlocked
                       ? `<span class="tag-chip" style="color:var(--sale)">Unlocked</span>`
-                      : g.owned
+                      : g.owned && !isPub
                       ? `<button class="btn-sm btn-primary" onclick="unlockAchievement(${a.achievement_id}, ${g.game_id})">Unlock</button>`
                       : `<span class="muted small">Locked</span>`
                   }
@@ -439,12 +511,16 @@ async function openGameDetail(gameId) {
 }
 
 function addToCart(gameId) {
+  if (state.role === "publisher") {
+    return toast("Publisher accounts cannot purchase games. Log in as a User.", true);
+  }
   const game = state.games.find((g) => g.game_id === gameId);
   if (!game) return;
   if (game.owned) return toast("You already own this game.", true);
   if (!state.cart.some((c) => c.game_id === gameId)) {
     state.cart.push(game);
     updateCartBadge();
+    renderFeaturedSpotlight();
     renderGames();
     toast(`Added "${game.title}" to cart.`);
   }
@@ -453,6 +529,7 @@ function addToCart(gameId) {
 function removeFromCart(gameId) {
   state.cart = state.cart.filter((c) => c.game_id !== gameId);
   updateCartBadge();
+  renderFeaturedSpotlight();
   renderGames();
   renderCartModal();
 }
@@ -461,7 +538,6 @@ function renderCartModal() {
   const wrap = document.getElementById("cartItemsWrap");
   const balEl = document.getElementById("cartWalletBalance");
   const warnEl = document.getElementById("cartBalanceWarning");
-  const checkoutBtn = document.getElementById("checkoutBtn");
 
   if (balEl) balEl.textContent = state.activeUserId ? moneyExact(state.walletBalance) : "Login required";
   if (warnEl) warnEl.textContent = "";
@@ -469,7 +545,6 @@ function renderCartModal() {
   if (!state.cart.length) {
     wrap.innerHTML = `<div class="muted">Your cart is empty.</div>`;
     document.getElementById("cartTotalValue").textContent = "₹0.00";
-    if (checkoutBtn) checkoutBtn.disabled = false;
     return;
   }
   let total = 0;
@@ -492,17 +567,15 @@ function renderCartModal() {
     .join("");
   document.getElementById("cartTotalValue").textContent = moneyExact(total);
 
-  if (state.activeUserId && total > state.walletBalance + 1e-9) {
-    if (warnEl) {
-      warnEl.textContent = `Insufficient wallet balance (${moneyExact(state.walletBalance)} < ${moneyExact(total)}).`;
-    }
+  if (state.activeUserId && total > state.walletBalance + 1e-9 && warnEl) {
+    warnEl.textContent = `Insufficient wallet balance (${moneyExact(state.walletBalance)} < ${moneyExact(total)}).`;
   }
 }
 
 async function toggleWishlist(gameId, isWishlisted) {
-  if (!state.activeUserId) {
+  if (!state.activeUserId || state.role !== "user") {
     openModal("loginModal");
-    return toast("Please log in to manage your wishlist.", true);
+    return toast("Please log in as a User to manage your wishlist.", true);
   }
   try {
     if (isWishlisted) {
@@ -533,7 +606,7 @@ async function submitReview(e, gameId) {
         review_text: fd.get("review_text"),
       }),
     });
-    toast("Review saved to MySQL!");
+    toast("Review published!");
     await Promise.all([loadGames(), openGameDetail(gameId)]);
   } catch (err) {
     toast(err.message, true);
@@ -566,7 +639,7 @@ async function unlockAchievement(achievementId, gameId) {
 
 async function loadLibrary() {
   const wrap = document.getElementById("libraryList");
-  if (!state.activeUserId) {
+  if (!state.activeUserId || state.role !== "user") {
     wrap.innerHTML = loginGuardHtml("your Game Library");
     return;
   }
@@ -615,7 +688,7 @@ async function playGame(gameId, minutes) {
 
 async function loadWishlist() {
   const wrap = document.getElementById("wishlistList");
-  if (!state.activeUserId) {
+  if (!state.activeUserId || state.role !== "user") {
     wrap.innerHTML = loginGuardHtml("your Wishlist");
     return;
   }
@@ -647,7 +720,7 @@ async function loadWishlist() {
 }
 
 async function buySingleGame(gameId) {
-  if (!state.activeUserId) return openModal("loginModal");
+  if (!state.activeUserId || state.role !== "user") return openModal("loginModal");
   try {
     const res = await api(`/api/users/${state.activeUserId}/checkout`, {
       method: "POST",
@@ -666,7 +739,7 @@ async function buySingleGame(gameId) {
 async function loadWalletAndOrders() {
   const guard = document.getElementById("walletAuthGuard");
   const content = document.getElementById("walletContent");
-  if (!state.activeUserId) {
+  if (!state.activeUserId || state.role !== "user") {
     guard.innerHTML = loginGuardHtml("Wallet & Orders");
     guard.classList.remove("hidden");
     content.classList.add("hidden");
@@ -724,7 +797,7 @@ async function loadWalletAndOrders() {
 async function loadFriends() {
   const guard = document.getElementById("friendsAuthGuard");
   const content = document.getElementById("friendsContent");
-  if (!state.activeUserId) {
+  if (!state.activeUserId || state.role !== "user") {
     guard.innerHTML = loginGuardHtml("Friends");
     guard.classList.remove("hidden");
     content.classList.add("hidden");
@@ -774,6 +847,73 @@ async function removeFriend(otherId) {
   await api(`/api/users/${state.activeUserId}/friends/${otherId}`, { method: "DELETE" });
   toast("Friendship removed.");
   await Promise.all([loadFriends(), loadAuthSession()]);
+}
+
+async function loadPublisherStudio() {
+  const guard = document.getElementById("publisherAuthGuard");
+  const content = document.getElementById("publisherStudioContent");
+  if (!state.activeUserId || state.role !== "publisher") {
+    guard.innerHTML = `
+      <h3>Publisher Access Required</h3>
+      <p class="muted">Sign in with a Publisher account to publish titles, manage discounts, and create achievements.</p>
+      <div class="card-actions mt-md">
+        <button class="btn btn-primary" onclick="openModalWithRole('login', 'publisher')">Publisher Login</button>
+        <button class="btn btn-secondary" onclick="openModalWithRole('register', 'publisher')">Register Studio</button>
+      </div>
+    `;
+    guard.classList.remove("hidden");
+    content.classList.add("hidden");
+    return;
+  }
+
+  guard.classList.add("hidden");
+  content.classList.remove("hidden");
+  document.getElementById("publisherStudioTitle").textContent = `Publisher Studio — ${state.publisherName || "Studio"}`;
+  document.getElementById("publishingStudioName").textContent = state.publisherName || "Studio";
+
+  const games = await api("/api/publisher/games");
+  const list = document.getElementById("publisherGamesList");
+  const opts = games.map((g) => `<option value="${g.game_id}">${esc(g.title)}</option>`).join("");
+  document.getElementById("manageSaleGameSelect").innerHTML = opts || `<option value="">No games published yet</option>`;
+  document.getElementById("manageAchGameSelect").innerHTML = opts || `<option value="">No games published yet</option>`;
+
+  if (!games.length) {
+    list.innerHTML = `<div class="muted small">You have not published any games yet. Use the form below to publish your first title!</div>`;
+    return;
+  }
+  list.innerHTML = games
+    .map(
+      (g) => `
+      <div class="list-row">
+        <div class="lib-item-left">
+          <div class="lib-thumb" style="background-image:url('${gameBannerUrl(g.game_id, g.title)}')"></div>
+          <div>
+            <strong>${esc(g.title)}</strong> <span class="muted small">by ${esc(g.developer_name)}</span>
+            <div class="muted small mt-xs">
+              Price: <strong>${money(g.effective_price)}</strong>
+              ${g.discount_pct > 0 ? `(<span style="color:var(--sale)">-${g.discount_pct}% ${esc(g.sale_title)}</span>)` : ""} ·
+              Players: ${g.owners_count} · Achievements: ${g.achievement_count}
+            </div>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button class="btn-sm btn-secondary" onclick="openGameDetail(${g.game_id})">Preview</button>
+          <button class="btn-sm btn-danger" onclick="deletePublisherGame(${g.game_id}, '${esc(g.title)}')">Delete</button>
+        </div>
+      </div>
+    `
+    )
+    .join("");
+}
+
+async function deletePublisherGame(gameId, title) {
+  try {
+    await api(`/api/games/${gameId}`, { method: "DELETE" });
+    toast(`Deleted "${title}".`);
+    await Promise.all([loadGames(), loadPublisherStudio(), loadAuthSession()]);
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 async function loadDbTables() {
@@ -833,6 +973,47 @@ function renderResultTable(container, columns, rows) {
   `;
 }
 
+function setLoginRole(role) {
+  document.getElementById("loginAccountType").value = role;
+  document.querySelectorAll("#loginRoleToggle .role-opt").forEach((b) => {
+    b.classList.toggle("active", b.dataset.role === role);
+  });
+  const submitBtn = document.getElementById("loginSubmitBtn");
+  const hintEl = document.getElementById("loginHintText");
+  const idInput = document.getElementById("loginIdentifierInput");
+  if (role === "publisher") {
+    submitBtn.textContent = "Login as Publisher";
+    idInput.placeholder = "Publisher Username (e.g. valve_pub)";
+    hintEl.innerHTML = `Demo Publishers: <code>valve_pub</code>, <code>cdpr_pub</code>, <code>supergiant_pub</code> · Password: <code>password123</code>`;
+  } else {
+    submitBtn.textContent = "Login as User";
+    idInput.placeholder = "Username or Member ID (e.g. 1)";
+    hintEl.innerHTML = `Demo User IDs: <code>1</code> to <code>6</code> · Password: <code>password123</code>`;
+  }
+}
+
+function setRegisterRole(role) {
+  document.getElementById("registerAccountType").value = role;
+  document.querySelectorAll("#registerRoleToggle .role-opt").forEach((b) => {
+    b.classList.toggle("active", b.dataset.role === role);
+  });
+  const isPub = role === "publisher";
+  document.getElementById("registerUserFields").classList.toggle("hidden", isPub);
+  document.getElementById("registerPublisherFields").classList.toggle("hidden", !isPub);
+  document.getElementById("regPublisherName").required = isPub;
+  document.getElementById("registerSubmitBtn").textContent = isPub ? "Create Publisher Account" : "Create User Account";
+}
+
+function openModalWithRole(mode, role) {
+  if (mode === "login") {
+    setLoginRole(role);
+    openModal("loginModal");
+  } else {
+    setRegisterRole(role);
+    openModal("registerModal");
+  }
+}
+
 async function refreshUserData() {
   await loadAuthSession();
   await Promise.all([
@@ -841,6 +1022,7 @@ async function refreshUserData() {
     loadWishlist(),
     loadWalletAndOrders(),
     loadFriends(),
+    loadPublisherStudio(),
   ]);
 }
 
@@ -848,12 +1030,17 @@ function bindEvents() {
   document.getElementById("navTabs").addEventListener("click", (e) => {
     const btn = e.target.closest(".nav-btn");
     if (!btn) return;
-    const tab = btn.dataset.tab;
-    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-    document.getElementById(`tab-${tab}`).classList.add("active");
-    if (tab === "db") loadDbTables();
+    switchTab(btn.dataset.tab);
+  });
+
+  document.getElementById("loginRoleToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".role-opt");
+    if (btn) setLoginRole(btn.dataset.role);
+  });
+
+  document.getElementById("registerRoleToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".role-opt");
+    if (btn) setRegisterRole(btn.dataset.role);
   });
 
   ["searchInput", "filterTag", "filterPublisher", "filterDeveloper", "filterOnSale"].forEach((id) => {
@@ -892,11 +1079,12 @@ function bindEvents() {
       });
       closeModal("loginModal");
       e.target.reset();
+      setLoginRole(res.role);
       state.cart = [];
       updateCartBadge();
       await refreshUserData();
-      showLoginIdBanner(res.username, "Logged in!");
-      toast(`Logged in as ${res.username}!`);
+      showAccountBanner(res, "Logged in!");
+      toast(`Logged in as ${res.username} (${res.role})!`);
     } catch (err) {
       toast(err.message, true);
     }
@@ -912,10 +1100,11 @@ function bindEvents() {
       });
       closeModal("registerModal");
       e.target.reset();
+      setRegisterRole("user");
       state.cart = [];
       updateCartBadge();
-      await refreshUserData();
-      showLoginIdBanner(res.username, "Account Created!");
+      await Promise.all([loadMeta(), refreshUserData()]);
+      showAccountBanner(res, "Account Created!");
       toast(`Account created! Welcome, ${res.username}.`);
     } catch (err) {
       toast(err.message, true);
@@ -932,10 +1121,10 @@ function bindEvents() {
   });
 
   document.getElementById("checkoutBtn").addEventListener("click", async () => {
-    if (!state.activeUserId) {
+    if (!state.activeUserId || state.role !== "user") {
       closeModal("cartModal");
       openModal("loginModal");
-      return toast("Please log in to complete your purchase.", true);
+      return toast("Please log in as a User to complete your purchase.", true);
     }
     if (!state.cart.length) return toast("Cart is empty.", true);
     try {
@@ -1000,7 +1189,6 @@ function bindEvents() {
       description: fd.get("description"),
       release_date: fd.get("release_date") || null,
       base_price: fd.get("base_price"),
-      publisher_id: fd.get("publisher_id"),
       developer_id: fd.get("developer_id"),
       age_rating: fd.get("age_rating"),
       tag_ids: fd.getAll("tag_ids").map(Number),
@@ -1008,20 +1196,8 @@ function bindEvents() {
     try {
       await api("/api/games", { method: "POST", body: JSON.stringify(payload) });
       e.target.reset();
-      toast("New game added to MySQL catalog!");
-      await loadGames();
-    } catch (err) {
-      toast(err.message, true);
-    }
-  });
-
-  document.getElementById("createPubForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    try {
-      await api("/api/publishers", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
-      e.target.reset();
-      toast("Publisher added!");
-      await loadMeta();
+      toast("New game published to catalog!");
+      await Promise.all([loadGames(), loadPublisherStudio(), loadAuthSession()]);
     } catch (err) {
       toast(err.message, true);
     }
@@ -1032,7 +1208,7 @@ function bindEvents() {
     try {
       await api("/api/developers", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
       e.target.reset();
-      toast("Developer added!");
+      toast("Developer studio added!");
       await loadMeta();
     } catch (err) {
       toast(err.message, true);
@@ -1078,7 +1254,7 @@ function bindEvents() {
         body: JSON.stringify({ game_id: fd.get("game_id"), discount_pct: fd.get("discount_pct") }),
       });
       toast("Discount applied to game!");
-      await Promise.all([loadMeta(), loadGames(), loadWishlist()]);
+      await Promise.all([loadMeta(), loadGames(), loadWishlist(), loadPublisherStudio()]);
     } catch (err) {
       toast(err.message, true);
     }
@@ -1099,7 +1275,7 @@ function bindEvents() {
       });
       e.target.reset();
       toast("Achievement added!");
-      await loadGames();
+      await Promise.all([loadGames(), loadPublisherStudio()]);
     } catch (err) {
       toast(err.message, true);
     }

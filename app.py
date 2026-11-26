@@ -54,10 +54,21 @@ def _error(message, status=400):
 def _require_auth(expected_user_id=None):
     uid = session.get("user_id")
     if not uid:
-        return None, _error("Please log in with your Member ID and password.", 401)
+        return None, _error("Please log in to continue.", 401)
     if expected_user_id is not None and int(uid) != int(expected_user_id):
-        return None, _error("Forbidden: you can only access your own member account.", 403)
+        return None, _error("Forbidden: you can only access your own account.", 403)
     return int(uid), None
+
+
+def _require_publisher():
+    uid = session.get("user_id")
+    role = session.get("role")
+    pub_id = session.get("publisher_id")
+    if not uid:
+        return None, None, _error("Please log in as a Publisher to continue.", 401)
+    if role != "publisher" or not pub_id:
+        return None, None, _error("Publisher account required for this action.", 403)
+    return int(uid), int(pub_id), None
 
 
 def _compute_effective_price(base_price, discount_pct):
@@ -92,33 +103,52 @@ def index():
 
 
 # ---------------------------------------------------------------------------
-# Authentication (Login / Register / Logout / Current Member)
+# Authentication (User & Publisher Login / Register / Logout)
 # ---------------------------------------------------------------------------
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     data = request.get_json(force=True) or {}
     identifier = str(data.get("identifier") or data.get("user_id") or "").strip()
     password = data.get("password") or ""
+    account_type = (data.get("account_type") or "user").strip().lower()
+    if account_type not in ("user", "publisher"):
+        return _error("Account type must be 'user' or 'publisher'.")
     if not identifier or not password:
-        return _error("Member ID (or username) and password are required.")
+        return _error("Username (or Member ID) and password are required.")
 
     with db_cursor() as (_, cur):
+        base_sql = (
+            "SELECT u.*, p.name AS publisher_name FROM USERS u "
+            "LEFT JOIN PUBLISHERS p ON p.publisher_id = u.publisher_id "
+        )
         if identifier.isdigit():
-            cur.execute("SELECT * FROM USERS WHERE user_id = %s", (int(identifier),))
+            cur.execute(base_sql + "WHERE u.user_id = %s", (int(identifier),))
         else:
             cur.execute(
-                "SELECT * FROM USERS WHERE username = %s OR email = %s",
+                base_sql + "WHERE u.username = %s OR u.email = %s",
                 (identifier, identifier),
             )
         user = cur.fetchone()
         if not user or not check_password_hash(user["password_hash"], password):
-            return _error("Invalid Member ID or password.", 401)
+            return _error("Invalid credentials or password.", 401)
+
+        if user["role"] != account_type:
+            expected_label = "Publisher" if user["role"] == "publisher" else "User"
+            return _error(
+                f"This account is registered as a {expected_label}. Please choose '{expected_label}' to log in.",
+                403,
+            )
 
         session["user_id"] = int(user["user_id"])
+        session["role"] = user["role"]
+        session["publisher_id"] = int(user["publisher_id"]) if user["publisher_id"] else None
         return jsonify({
             "authenticated": True,
             "user_id": int(user["user_id"]),
             "username": user["username"],
+            "role": user["role"],
+            "publisher_id": session["publisher_id"],
+            "publisher_name": user["publisher_name"],
             "wallet_balance": float(user["wallet_balance"]),
             "country": user["country"],
         })
@@ -127,38 +157,71 @@ def auth_login():
 @app.route("/api/auth/register", methods=["POST"])
 def auth_register():
     data = request.get_json(force=True) or {}
+    account_type = (data.get("account_type") or "user").strip().lower()
+    if account_type not in ("user", "publisher"):
+        return _error("Account type must be 'user' or 'publisher'.")
+
     username = (data.get("username") or "").strip()
     email = (data.get("email") or "").strip()
     password = data.get("password") or ""
     country = (data.get("country") or "India").strip()
-    wallet = float(data.get("wallet_balance") or 0)
 
     if not username or not email or not password:
         return _error("Username, email, and password are required.")
     if len(password) < 4:
         return _error("Password must be at least 4 characters.")
-    if wallet < 0:
-        return _error("Initial wallet balance cannot be negative.")
 
     pw_hash = generate_password_hash(password)
     with db_cursor(commit=True) as (_, cur):
+        publisher_id = None
+        publisher_name = None
+        wallet = 0.0
+
+        if account_type == "publisher":
+            publisher_name = (data.get("publisher_name") or "").strip()
+            if not publisher_name:
+                return _error("Publisher / Studio Name is required for Publisher registration.")
+            founded_year = data.get("founded_year") or None
+            website = (data.get("website") or "").strip() or None
+            cur.execute("SELECT publisher_id, name FROM PUBLISHERS WHERE name = %s", (publisher_name,))
+            existing_pub = cur.fetchone()
+            if existing_pub:
+                publisher_id = int(existing_pub["publisher_id"])
+                publisher_name = existing_pub["name"]
+            else:
+                cur.execute(
+                    "INSERT INTO PUBLISHERS (name, country, founded_year, website) VALUES (%s, %s, %s, %s)",
+                    (publisher_name, country, founded_year, website),
+                )
+                publisher_id = cur.lastrowid
+        else:
+            wallet = float(data.get("wallet_balance") or 0)
+            if wallet < 0:
+                return _error("Initial wallet balance cannot be negative.")
+
         cur.execute(
-            "INSERT INTO USERS (username, email, password_hash, wallet_balance, country) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (username, email, pw_hash, wallet, country),
+            "INSERT INTO USERS (username, email, password_hash, role, publisher_id, wallet_balance, country) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (username, email, pw_hash, account_type, publisher_id, wallet, country),
         )
         user_id = cur.lastrowid
-        if wallet > 0:
+        if account_type == "user" and wallet > 0:
             cur.execute(
                 "INSERT INTO WALLET_TRANSACTIONS (user_id, amount, txn_type, reference_order_id) "
                 "VALUES (%s, %s, 'deposit', NULL)",
                 (user_id, wallet),
             )
+
         session["user_id"] = int(user_id)
+        session["role"] = account_type
+        session["publisher_id"] = int(publisher_id) if publisher_id else None
         return jsonify({
             "authenticated": True,
             "user_id": int(user_id),
             "username": username,
+            "role": account_type,
+            "publisher_id": session["publisher_id"],
+            "publisher_name": publisher_name,
             "wallet_balance": float(wallet),
             "country": country,
         }), 201
@@ -166,7 +229,7 @@ def auth_register():
 
 @app.route("/api/auth/logout", methods=["POST"])
 def auth_logout():
-    session.pop("user_id", None)
+    session.clear()
     return jsonify({"authenticated": False, "logged_out": True})
 
 
@@ -178,13 +241,19 @@ def auth_me():
 
     with db_cursor() as (_, cur):
         cur.execute(
-            "SELECT user_id, username, wallet_balance, country, created_at FROM USERS WHERE user_id = %s",
+            "SELECT u.user_id, u.username, u.role, u.publisher_id, p.name AS publisher_name, "
+            "u.wallet_balance, u.country, u.created_at "
+            "FROM USERS u LEFT JOIN PUBLISHERS p ON p.publisher_id = u.publisher_id "
+            "WHERE u.user_id = %s",
             (int(uid),),
         )
         user = cur.fetchone()
         if not user:
-            session.pop("user_id", None)
+            session.clear()
             return jsonify({"authenticated": False, "user": None})
+
+        session["role"] = user["role"]
+        session["publisher_id"] = int(user["publisher_id"]) if user["publisher_id"] else None
 
         cur.execute(
             "SELECT COUNT(*) AS owned_games, COALESCE(SUM(playtime_minutes), 0) AS total_playtime "
@@ -206,6 +275,14 @@ def auth_me():
         )
         ach = cur.fetchone()
 
+        published_games = 0
+        if user["role"] == "publisher" and user["publisher_id"]:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM GAMES WHERE publisher_id = %s",
+                (int(user["publisher_id"]),),
+            )
+            published_games = int(cur.fetchone()["cnt"])
+
         return jsonify({
             "authenticated": True,
             "user": serialize_row(user),
@@ -215,6 +292,7 @@ def auth_me():
                 "wishlist_count": int(wish["wishlist_count"]),
                 "friend_count": int(friends["friend_count"]),
                 "unlocked_achievements": int(ach["unlocked_achievements"]),
+                "published_games": published_games,
             },
         })
 
@@ -392,16 +470,44 @@ def get_game_detail(game_id):
         return jsonify(game)
 
 
+@app.route("/api/publisher/games", methods=["GET"])
+def publisher_games():
+    _, pub_id, err = _require_publisher()
+    if err:
+        return err
+    with db_cursor() as (_, cur):
+        cur.execute(
+            f"""
+            SELECT g.*, d.name AS developer_name, sd.discount_pct, sd.sale_title,
+                   (SELECT COUNT(*) FROM USER_LIBRARY ul WHERE ul.game_id = g.game_id) AS owners_count,
+                   (SELECT COUNT(*) FROM ACHIEVEMENTS a WHERE a.game_id = g.game_id) AS achievement_count
+            FROM GAMES g
+            JOIN DEVELOPERS d ON d.developer_id = g.developer_id
+            LEFT JOIN ({_active_discount_subquery()}) sd ON sd.game_id = g.game_id
+            WHERE g.publisher_id = %s
+            ORDER BY g.game_id DESC
+            """,
+            (pub_id,),
+        )
+        rows = serialize_rows(cur.fetchall())
+        for r in rows:
+            r["discount_pct"] = int(r["discount_pct"]) if r["discount_pct"] else 0
+            r["effective_price"] = _compute_effective_price(r["base_price"], r["discount_pct"])
+        return jsonify(rows)
+
+
 @app.route("/api/games", methods=["POST"])
 def create_game():
+    _, pub_id, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     title = (data.get("title") or "").strip()
     if not title:
         return _error("Game title is required.")
-    publisher_id = data.get("publisher_id")
     developer_id = data.get("developer_id")
-    if not publisher_id or not developer_id:
-        return _error("Publisher and Developer are required.")
+    if not developer_id:
+        return _error("Developer is required.")
 
     base_price = float(data.get("base_price") or 0)
     if base_price < 0:
@@ -417,7 +523,7 @@ def create_game():
                 data.get("description") or "",
                 data.get("release_date") or None,
                 base_price,
-                int(publisher_id),
+                pub_id,
                 int(developer_id),
                 data.get("age_rating") or "Everyone",
             ),
@@ -431,10 +537,13 @@ def create_game():
 
 @app.route("/api/games/<int:game_id>", methods=["DELETE"])
 def delete_game(game_id):
+    _, pub_id, err = _require_publisher()
+    if err:
+        return err
     with db_cursor(commit=True) as (_, cur):
-        cur.execute("DELETE FROM GAMES WHERE game_id = %s", (game_id,))
+        cur.execute("DELETE FROM GAMES WHERE game_id = %s AND publisher_id = %s", (game_id, pub_id))
         if cur.rowcount == 0:
-            return _error("Game not found.", 404)
+            return _error("Game not found or belongs to another publisher.", 404)
         return jsonify({"deleted": game_id})
 
 
@@ -923,6 +1032,9 @@ def get_meta():
 
 @app.route("/api/publishers", methods=["POST"])
 def create_publisher():
+    _, _, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -937,6 +1049,9 @@ def create_publisher():
 
 @app.route("/api/developers", methods=["POST"])
 def create_developer():
+    _, _, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -951,6 +1066,9 @@ def create_developer():
 
 @app.route("/api/tags", methods=["POST"])
 def create_tag():
+    _, _, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -965,6 +1083,9 @@ def create_tag():
 
 @app.route("/api/sales", methods=["POST"])
 def create_sale():
+    _, _, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     title = (data.get("title") or "").strip()
     start_date = data.get("start_date")
@@ -981,12 +1102,18 @@ def create_sale():
 
 @app.route("/api/sales/<int:sale_id>/items", methods=["POST"])
 def add_sale_item(sale_id):
+    _, pub_id, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     game_id = data.get("game_id")
     discount_pct = int(data.get("discount_pct") or 0)
     if not game_id or not (1 <= discount_pct <= 100):
         return _error("Valid game_id and discount_pct (1-100) are required.")
     with db_cursor(commit=True) as (_, cur):
+        cur.execute("SELECT 1 FROM GAMES WHERE game_id = %s AND publisher_id = %s", (int(game_id), pub_id))
+        if not cur.fetchone():
+            return _error("You can only discount games published by your studio.", 403)
         cur.execute(
             """
             INSERT INTO SALE_ITEMS (sale_id, game_id, discount_pct) VALUES (%s, %s, %s)
@@ -999,12 +1126,18 @@ def add_sale_item(sale_id):
 
 @app.route("/api/achievements", methods=["POST"])
 def create_achievement():
+    _, pub_id, err = _require_publisher()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     game_id = data.get("game_id")
     name = (data.get("name") or "").strip()
     if not game_id or not name:
         return _error("game_id and achievement name are required.")
     with db_cursor(commit=True) as (_, cur):
+        cur.execute("SELECT 1 FROM GAMES WHERE game_id = %s AND publisher_id = %s", (int(game_id), pub_id))
+        if not cur.fetchone():
+            return _error("You can only add achievements to games published by your studio.", 403)
         cur.execute(
             "INSERT INTO ACHIEVEMENTS (game_id, name, description, is_hidden) VALUES (%s, %s, %s, %s)",
             (int(game_id), name, data.get("description") or "", bool(data.get("is_hidden", False))),

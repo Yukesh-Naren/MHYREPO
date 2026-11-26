@@ -1004,3 +1004,48 @@ tr:hover td {
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* User vs Publisher Role Controls */
+.role-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.role-opt {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.role-opt.active {
+  background: linear-gradient(135deg, #db4d89, #b52d66);
+  color: #ffffff;
+}
+
+.role-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(201, 59, 118, 0.14);
+  color: var(--accent-dark);
+  border: 1px solid rgba(201, 59, 118, 0.35);
+}
+
+.role-badge.publisher {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #f59e0b;
+}
