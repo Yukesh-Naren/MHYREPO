@@ -39,7 +39,7 @@
 
         <div id="loggedInControls" class="auth-controls hidden">
           <div class="wallet-chip" id="walletChip">₹0.00</div>
-          <div class="member-id-pill" id="memberIdPill">Member ID: #—</div>
+          <div class="member-id-pill" id="memberIdPill">Login ID: #—</div>
           <button class="btn-sm btn-danger" id="logoutBtn">Logout</button>
         </div>
       </div>
@@ -48,6 +48,7 @@
 
   <main class="container">
     <div id="toastContainer" class="toast-container"></div>
+    <div id="loginIdNotice" class="login-id-banner hidden"></div>
 
     <!-- STORE TAB -->
     <section id="tab-store" class="tab-panel active">
@@ -55,9 +56,12 @@
         <div>
           <h1>FERRO Y Featured &amp; On Sale</h1>
           <p id="activeSaleBanner">Loading current seasonal sales from MySQL...</p>
+          <div id="heroLoginIdLine" class="small muted mt-xs"></div>
         </div>
         <div class="hero-stats" id="userQuickStats"></div>
       </div>
+
+      <div id="featuredSpotlight" class="featured-spotlight hidden"></div>
 
       <div class="filter-bar">
         <input type="text" id="searchInput" class="input" placeholder="Search games by title or description..." />

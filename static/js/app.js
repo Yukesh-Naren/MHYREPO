@@ -3,10 +3,39 @@ const state = {
   walletBalance: 0,
   meta: { publishers: [], developers: [], tags: [], sales: [], sale_items: [] },
   games: [],
+  spotlightIdx: 0,
   cart: [],
   dbTables: [],
   selectedDbTable: "GAMES",
 };
+
+function gameBannerUrl(gameId, title = "") {
+  const id = Number(gameId || 0);
+  if (id >= 1 && id <= 12) {
+    return `/static/banners/game_${id}.svg`;
+  }
+  const palettes = [
+    ["#1e1b4b", "#db2777"],
+    ["#1f2937", "#f59e0b"],
+    ["#0f172a", "#38bdf8"],
+    ["#3b0764", "#f472b6"],
+  ];
+  const [c1, c2] = palettes[id % palettes.length];
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 220'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' stop-color='${c1}'/><stop offset='100%' stop-color='${c2}'/></linearGradient></defs><rect width='640' height='220' fill='url(#g)'/><circle cx='520' cy='110' r='70' fill='white' fill-opacity='0.14'/><text x='30' y='182' fill='white' font-size='12' font-weight='700' font-family='sans-serif'>${esc(title).slice(0, 28)}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function showLoginIdBanner(userId, messagePrefix = "Signed in!") {
+  const el = document.getElementById("loginIdNotice");
+  if (!el) return;
+  el.innerHTML = `
+    <div>
+      <strong>${esc(messagePrefix)}</strong> Your Login ID is <code>#${userId}</code> — use <code>${userId}</code> with your password to log in anytime.
+    </div>
+    <button class="btn-sm btn-ghost" onclick="document.getElementById('loginIdNotice').classList.add('hidden')">Dismiss</button>
+  `;
+  el.classList.remove("hidden");
+}
 
 function esc(val) {
   if (val === null || val === undefined) return "";
@@ -96,8 +125,10 @@ async function loadAuthSession() {
     document.getElementById("badgeLibrary").textContent = "0";
     document.getElementById("badgeWishlist").textContent = "0";
     document.getElementById("badgeFriends").textContent = "0";
+    const heroLine = document.getElementById("heroLoginIdLine");
+    if (heroLine) heroLine.textContent = "Not logged in — click Login or Register to get your Login ID.";
     document.getElementById("userQuickStats").innerHTML = `
-      <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Sign in with ID</span></div>
+      <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Login ID Required</span></div>
     `;
     return;
   }
@@ -108,15 +139,17 @@ async function loadAuthSession() {
   loggedInEl.classList.remove("hidden");
 
   const bal = moneyExact(data.user.wallet_balance);
-  document.getElementById("memberIdPill").textContent = `Member ID: #${data.user.user_id}`;
+  document.getElementById("memberIdPill").textContent = `Login ID: #${data.user.user_id}`;
   document.getElementById("walletChip").textContent = bal;
   document.getElementById("walletBig").textContent = bal;
   document.getElementById("badgeLibrary").textContent = data.stats.owned_games;
   document.getElementById("badgeWishlist").textContent = data.stats.wishlist_count;
   document.getElementById("badgeFriends").textContent = data.stats.friend_count;
+  const heroLine = document.getElementById("heroLoginIdLine");
+  if (heroLine) heroLine.innerHTML = `Active Session · <strong>Login ID: #${data.user.user_id}</strong>`;
 
   document.getElementById("userQuickStats").innerHTML = `
-    <div class="stat-pill"><span class="val">#${data.user.user_id}</span><span class="lbl">Member ID</span></div>
+    <div class="stat-pill"><span class="val">#${data.user.user_id}</span><span class="lbl">Login ID</span></div>
     <div class="stat-pill"><span class="val">${data.stats.owned_games}</span><span class="lbl">Games Owned</span></div>
     <div class="stat-pill"><span class="val">${Math.round(data.stats.total_playtime_minutes / 60)}h</span><span class="lbl">Playtime</span></div>
     <div class="stat-pill"><span class="val">${data.stats.unlocked_achievements}</span><span class="lbl">Achievements</span></div>
@@ -170,6 +203,7 @@ async function loadGames() {
   if (onSale) params.set("on_sale", "1");
 
   state.games = await api(`/api/games?${params.toString()}`);
+  renderFeaturedSpotlight();
   renderGames();
 
   if (!q && !tag && !pub && !dev && !onSale) {
@@ -177,6 +211,63 @@ async function loadGames() {
     document.getElementById("manageSaleGameSelect").innerHTML = opts;
     document.getElementById("manageAchGameSelect").innerHTML = opts;
   }
+}
+
+function cycleSpotlight(delta) {
+  const pool = state.games.filter((g) => g.discount_pct > 0);
+  const list = pool.length ? pool : state.games;
+  if (!list.length) return;
+  state.spotlightIdx = (state.spotlightIdx + delta + list.length) % list.length;
+  renderFeaturedSpotlight();
+}
+
+function renderFeaturedSpotlight() {
+  const box = document.getElementById("featuredSpotlight");
+  if (!box) return;
+  const pool = state.games.filter((g) => g.discount_pct > 0);
+  const list = pool.length ? pool : state.games;
+  if (!list.length) {
+    box.classList.add("hidden");
+    return;
+  }
+  if (state.spotlightIdx >= list.length) state.spotlightIdx = 0;
+  const g = list[state.spotlightIdx];
+  const bannerUrl = gameBannerUrl(g.game_id, g.title);
+  const inCart = state.cart.some((c) => c.game_id === g.game_id);
+
+  const actionBtn = g.owned
+    ? `<span class="tag-chip">In Library</span>`
+    : inCart
+    ? `<button class="btn-sm btn-secondary" onclick="removeFromCart(${g.game_id})">In Cart</button>`
+    : `<button class="btn-sm btn-sale" onclick="addToCart(${g.game_id})">Add to Cart · ${money(g.effective_price)}</button>`;
+
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="spotlight-art" style="background-image:url('${bannerUrl}')" onclick="openGameDetail(${g.game_id})">
+      <div class="spotlight-art-inner">
+        <span class="spotlight-tag">${g.discount_pct > 0 ? `-${g.discount_pct}% ${esc(g.sale_title || "FEATURED SALE")}` : "FEATURED GAME"}</span>
+        <h2>${esc(g.title)}</h2>
+      </div>
+    </div>
+    <div class="spotlight-body">
+      <div>
+        <div class="game-meta">${esc(g.developer_name)} · ${esc(g.publisher_name)} · ${esc(g.age_rating || "N/A")}</div>
+        <p class="mt-sm" style="margin-bottom:8px;">${esc(g.description)}</p>
+        <div class="tag-row">${g.tags.map((t) => `<span class="tag-chip">${esc(t.name)}</span>`).join("")}</div>
+      </div>
+      <div class="game-footer">
+        <div class="price-box">
+          ${g.discount_pct > 0 ? `<span class="price-strike">${moneyExact(g.base_price)}</span> <span class="price-final on-sale">${money(g.effective_price)}</span>` : `<span class="price-final">${money(g.effective_price)}</span>`}
+        </div>
+        <div class="spotlight-nav">
+          <button class="btn-sm btn-ghost" onclick="cycleSpotlight(-1)" title="Previous">◀</button>
+          <button class="btn-sm btn-ghost" onclick="cycleSpotlight(1)" title="Next">▶</button>
+          <button class="btn-sm btn-secondary" onclick="openGameDetail(${g.game_id})">Details</button>
+          ${actionBtn}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderGames() {
@@ -188,6 +279,7 @@ function renderGames() {
   grid.innerHTML = state.games
     .map((g) => {
       const inCart = state.cart.some((c) => c.game_id === g.game_id);
+      const bannerUrl = gameBannerUrl(g.game_id, g.title);
       const reviewBadge =
         g.positive_pct !== null
           ? `<span class="muted small">${g.positive_pct}% positive (${g.review_count})</span>`
@@ -214,7 +306,7 @@ function renderGames() {
 
       return `
         <article class="game-card">
-          <div class="game-banner" onclick="openGameDetail(${g.game_id})">
+          <div class="game-banner" style="background-image:url('${bannerUrl}')" onclick="openGameDetail(${g.game_id})">
             <div class="game-banner-top">
               <span class="age-pill">${esc(g.age_rating || "N/A")}</span>
               ${g.discount_pct > 0 ? `<span class="discount-badge">-${g.discount_pct}%</span>` : ""}
@@ -270,10 +362,15 @@ async function openGameDetail(gameId) {
     `
     : `<p class="muted small mt-sm">Purchase this game to write a review.</p>`;
 
+  const bannerUrl = gameBannerUrl(g.game_id, g.title);
   wrap.innerHTML = `
+    <div class="modal-banner" style="background-image:url('${bannerUrl}')">
+      <div class="modal-banner-title">
+        <h2>${esc(g.title)}</h2>
+      </div>
+    </div>
     <div class="section-header">
       <div>
-        <h2>${esc(g.title)}</h2>
         <div class="muted small">Developer: ${esc(g.developer_name)} · Publisher: ${esc(g.publisher_name)} · Released: ${esc(g.release_date || "TBA")} · ${esc(g.age_rating)}</div>
       </div>
       <div>${buyBtn}</div>
@@ -482,12 +579,15 @@ async function loadLibrary() {
     .map(
       (g) => `
       <div class="list-row">
-        <div>
-          <strong>${esc(g.title)}</strong> <span class="muted small">by ${esc(g.developer_name)}</span>
-          <div class="muted small mt-xs">
-            Playtime: <strong>${fmtMinutes(g.playtime_minutes)}</strong> ·
-            Last Played: ${esc(g.last_played_at || "Never")} ·
-            Achievements: ${g.unlocked_achievements}/${g.total_achievements}
+        <div class="lib-item-left">
+          <div class="lib-thumb" style="background-image:url('${gameBannerUrl(g.game_id, g.title)}')"></div>
+          <div>
+            <strong>${esc(g.title)}</strong> <span class="muted small">by ${esc(g.developer_name)}</span>
+            <div class="muted small mt-xs">
+              Playtime: <strong>${fmtMinutes(g.playtime_minutes)}</strong> ·
+              Last Played: ${esc(g.last_played_at || "Never")} ·
+              Achievements: ${g.unlocked_achievements}/${g.total_achievements}
+            </div>
           </div>
         </div>
         <div class="card-actions">
@@ -528,9 +628,12 @@ async function loadWishlist() {
     .map(
       (w) => `
       <div class="list-row">
-        <div>
-          <strong>${esc(w.title)}</strong> <span class="muted small">(${esc(w.publisher_name)})</span>
-          <div class="muted small">Added: ${esc(w.added_at)} ${w.discount_pct > 0 ? `· <span style="color:var(--sale)">-${w.discount_pct}% (${esc(w.sale_title)})</span>` : ""}</div>
+        <div class="lib-item-left">
+          <div class="lib-thumb" style="background-image:url('${gameBannerUrl(w.game_id, w.title)}')"></div>
+          <div>
+            <strong>${esc(w.title)}</strong> <span class="muted small">(${esc(w.publisher_name)})</span>
+            <div class="muted small">Added: ${esc(w.added_at)} ${w.discount_pct > 0 ? `· <span style="color:var(--sale)">-${w.discount_pct}% (${esc(w.sale_title)})</span>` : ""}</div>
+          </div>
         </div>
         <div class="card-actions">
           <strong>${money(w.effective_price)}</strong>
@@ -792,7 +895,8 @@ function bindEvents() {
       state.cart = [];
       updateCartBadge();
       await refreshUserData();
-      toast(`Logged in as Member ID #${res.user_id}!`);
+      showLoginIdBanner(res.user_id, "Logged in!");
+      toast(`Logged in! Login ID: #${res.user_id}`);
     } catch (err) {
       toast(err.message, true);
     }
@@ -811,7 +915,8 @@ function bindEvents() {
       state.cart = [];
       updateCartBadge();
       await refreshUserData();
-      toast(`Account created! Your Member ID is #${res.user_id}.`);
+      showLoginIdBanner(res.user_id, "Account Created!");
+      toast(`Account created! Your Login ID is #${res.user_id}.`);
     } catch (err) {
       toast(err.message, true);
     }
@@ -821,6 +926,7 @@ function bindEvents() {
     await api("/api/auth/logout", { method: "POST" });
     state.cart = [];
     updateCartBadge();
+    document.getElementById("loginIdNotice").classList.add("hidden");
     await refreshUserData();
     toast("Logged out.");
   });
