@@ -24,7 +24,7 @@
         <button class="nav-btn user-only-nav" data-tab="wallet">Wallet &amp; Orders</button>
         <button class="nav-btn user-only-nav" data-tab="friends">Friends <span class="badge" id="badgeFriends">0</span></button>
         <button class="nav-btn publisher-only-nav hidden" data-tab="manage">Publisher Studio</button>
-        <button class="nav-btn" data-tab="db">Data Explorer</button>
+        <button class="nav-btn admin-only-nav hidden" data-tab="db">Data Explorer</button>
       </nav>
 
       <div class="user-controls">
@@ -253,9 +253,10 @@
       </div>
     </section>
 
-    <!-- DATA EXPLORER TAB -->
+    <!-- DATA EXPLORER TAB (PLATFORM ADMIN ONLY) -->
     <section id="tab-db" class="tab-panel">
-      <div class="db-layout">
+      <div id="adminAuthGuard" class="card hidden"></div>
+      <div id="dbContent" class="db-layout">
         <div class="card db-sidebar">
           <h3>Data Tables</h3>
           <p class="muted small">Click any table to inspect live records &amp; schema.</p>
@@ -331,9 +332,10 @@
       <h3>Login to FERRO Y</h3>
       <p class="muted small">Choose your account type, then sign in with your username (or Member ID) and password.</p>
 
-      <div class="role-toggle mt-md" id="loginRoleToggle">
-        <button type="button" class="role-opt active" data-role="user">User (Player)</button>
-        <button type="button" class="role-opt" data-role="publisher">Publisher (Studio)</button>
+      <div class="role-toggle role-toggle-3 mt-md" id="loginRoleToggle">
+        <button type="button" class="role-opt active" data-role="user">User</button>
+        <button type="button" class="role-opt" data-role="publisher">Publisher</button>
+        <button type="button" class="role-opt" data-role="admin">Platform Admin</button>
       </div>
 
       <form id="loginForm" class="form-stack mt-md">

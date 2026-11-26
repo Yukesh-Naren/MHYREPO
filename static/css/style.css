@@ -1016,6 +1016,10 @@ tr:hover td {
   border-radius: 8px;
 }
 
+.role-toggle-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .role-opt {
   background: transparent;
   color: var(--muted);
@@ -1048,4 +1052,10 @@ tr:hover td {
   background: #fef3c7;
   color: #92400e;
   border-color: #f59e0b;
+}
+
+.role-badge.admin {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-color: #6366f1;
 }

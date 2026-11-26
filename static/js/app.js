@@ -32,7 +32,8 @@ function gameBannerUrl(gameId, title = "") {
 function showAccountBanner(res, messagePrefix = "Signed in!") {
   const el = document.getElementById("loginIdNotice");
   if (!el) return;
-  const roleLabel = res.role === "publisher" ? "Publisher" : "User";
+  const roleMap = { user: "User", publisher: "Publisher", admin: "Platform Admin" };
+  const roleLabel = roleMap[res.role] || "User";
   const studioInfo = res.publisher_name ? ` · Studio: <strong>${esc(res.publisher_name)}</strong>` : "";
   el.innerHTML = `
     <div>
@@ -130,11 +131,15 @@ function loginGuardHtml(sectionName) {
 
 function applyRoleVisibility() {
   const isPub = state.role === "publisher";
+  const isAdmin = state.role === "admin";
   document.querySelectorAll(".user-only-nav").forEach((el) => {
-    el.classList.toggle("hidden", isPub);
+    el.classList.toggle("hidden", isPub || isAdmin);
   });
   document.querySelectorAll(".publisher-only-nav").forEach((el) => {
     el.classList.toggle("hidden", !isPub);
+  });
+  document.querySelectorAll(".admin-only-nav").forEach((el) => {
+    el.classList.toggle("hidden", !isAdmin);
   });
 
   const activeBtn = document.querySelector(".nav-btn.active");
@@ -162,7 +167,7 @@ async function loadAuthSession() {
     document.getElementById("badgeWishlist").textContent = "0";
     document.getElementById("badgeFriends").textContent = "0";
     const heroLine = document.getElementById("heroLoginIdLine");
-    if (heroLine) heroLine.textContent = "Not logged in — sign in as a User or Publisher.";
+    if (heroLine) heroLine.textContent = "Not logged in — sign in as a User, Publisher, or Platform Admin.";
     document.getElementById("userQuickStats").innerHTML = `
       <div class="stat-pill"><span class="val">Guest</span><span class="lbl">Sign in to play</span></div>
     `;
@@ -181,15 +186,34 @@ async function loadAuthSession() {
   loggedInEl.classList.remove("hidden");
 
   const roleBadge = document.getElementById("roleBadgePill");
-  roleBadge.textContent = state.role === "publisher" ? "PUBLISHER" : "USER";
-  roleBadge.classList.toggle("publisher", state.role === "publisher");
+  roleBadge.classList.remove("publisher", "admin");
+  if (state.role === "publisher") {
+    roleBadge.textContent = "PUBLISHER";
+    roleBadge.classList.add("publisher");
+  } else if (state.role === "admin") {
+    roleBadge.textContent = "ADMIN";
+    roleBadge.classList.add("admin");
+  } else {
+    roleBadge.textContent = "USER";
+  }
 
   const bal = moneyExact(data.user.wallet_balance);
   document.getElementById("walletChip").textContent = bal;
   document.getElementById("walletBig").textContent = bal;
 
   const heroLine = document.getElementById("heroLoginIdLine");
-  if (state.role === "publisher") {
+  if (state.role === "admin") {
+    document.getElementById("memberIdPill").textContent = `Admin: ${data.user.username}`;
+    if (heroLine) {
+      heroLine.innerHTML = `Platform Admin Session · Signed in as <strong>${esc(data.user.username)}</strong> (Data Explorer Unlocked)`;
+    }
+    document.getElementById("userQuickStats").innerHTML = `
+      <div class="stat-pill"><span class="val">${esc(data.user.username)}</span><span class="lbl">Platform Admin</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.total_tables || 17}</span><span class="lbl">Data Tables</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.total_users || 0}</span><span class="lbl">Accounts</span></div>
+      <div class="stat-pill"><span class="val">${data.stats.total_orders || 0}</span><span class="lbl">Orders</span></div>
+    `;
+  } else if (state.role === "publisher") {
     document.getElementById("memberIdPill").textContent = `${data.user.publisher_name || "Publisher"} (${data.user.username})`;
     if (heroLine) {
       heroLine.innerHTML = `Publisher Session · <strong>${esc(data.user.username)}</strong> (${esc(data.user.publisher_name || "Studio")})`;
@@ -289,10 +313,10 @@ function renderFeaturedSpotlight() {
   const g = list[state.spotlightIdx];
   const bannerUrl = gameBannerUrl(g.game_id, g.title);
   const inCart = state.cart.some((c) => c.game_id === g.game_id);
-  const isPub = state.role === "publisher";
+  const isNonPlayer = state.role === "publisher" || state.role === "admin";
 
   let actionBtn = "";
-  if (isPub) {
+  if (isNonPlayer) {
     actionBtn = "";
   } else if (g.owned) {
     actionBtn = `<span class="tag-chip">In Library</span>`;
@@ -337,7 +361,7 @@ function renderGames() {
     grid.innerHTML = `<div class="card">No games match your current filters.</div>`;
     return;
   }
-  const isPub = state.role === "publisher";
+  const isNonPlayer = state.role === "publisher" || state.role === "admin";
 
   grid.innerHTML = state.games
     .map((g) => {
@@ -354,7 +378,7 @@ function renderGames() {
 
       let actionBtn = "";
       let wishBtn = "";
-      if (isPub) {
+      if (isNonPlayer) {
         actionBtn = `<button class="btn-sm btn-secondary" onclick="openGameDetail(${g.game_id})">View</button>`;
       } else {
         if (g.owned) {
@@ -405,17 +429,17 @@ async function openGameDetail(gameId) {
   const g = await api(`/api/games/${gameId}`);
   const wrap = document.getElementById("gameModalContent");
   const inCart = state.cart.some((c) => c.game_id === g.game_id);
-  const isPub = state.role === "publisher";
+  const isNonPlayer = state.role === "publisher" || state.role === "admin";
 
-  const buyBtn = isPub
-    ? `<span class="tag-chip">Publisher View</span>`
+  const buyBtn = isNonPlayer
+    ? `<span class="tag-chip">${state.role === "admin" ? "Admin Preview" : "Publisher View"}</span>`
     : g.owned
     ? `<span class="tag-chip">Owned in Library</span>`
     : inCart
     ? `<button class="btn btn-secondary" onclick="removeFromCart(${g.game_id}); openGameDetail(${g.game_id})">Remove from Cart</button>`
     : `<button class="btn btn-sale" onclick="addToCart(${g.game_id}); openGameDetail(${g.game_id})">Add to Cart · ${money(g.effective_price)}</button>`;
 
-  const reviewFormHtml = isPub
+  const reviewFormHtml = isNonPlayer
     ? `<p class="muted small mt-sm">Switch to a User account to write player reviews.</p>`
     : !state.activeUserId
     ? `<p class="muted small mt-sm">Log in as a User to post a review.</p>`
@@ -468,7 +492,7 @@ async function openGameDetail(gameId) {
                   ${
                     a.unlocked
                       ? `<span class="tag-chip" style="color:var(--sale)">Unlocked</span>`
-                      : g.owned && !isPub
+                      : g.owned && !isNonPlayer
                       ? `<button class="btn-sm btn-primary" onclick="unlockAchievement(${a.achievement_id}, ${g.game_id})">Unlock</button>`
                       : `<span class="muted small">Locked</span>`
                   }
@@ -511,8 +535,8 @@ async function openGameDetail(gameId) {
 }
 
 function addToCart(gameId) {
-  if (state.role === "publisher") {
-    return toast("Publisher accounts cannot purchase games. Log in as a User.", true);
+  if (state.role === "publisher" || state.role === "admin") {
+    return toast("Only User accounts can purchase games. Log in as a User.", true);
   }
   const game = state.games.find((g) => g.game_id === gameId);
   if (!game) return;
@@ -917,6 +941,23 @@ async function deletePublisherGame(gameId, title) {
 }
 
 async function loadDbTables() {
+  const guard = document.getElementById("adminAuthGuard");
+  const content = document.getElementById("dbContent");
+  if (!state.activeUserId || state.role !== "admin") {
+    guard.innerHTML = `
+      <h3>Platform Admin Access Required</h3>
+      <p class="muted">Only the Platform Admin can inspect database tables and run read-only queries.</p>
+      <div class="card-actions mt-md">
+        <button class="btn btn-primary" onclick="openModalWithRole('login', 'admin')">Platform Admin Login</button>
+      </div>
+    `;
+    guard.classList.remove("hidden");
+    content.classList.add("hidden");
+    return;
+  }
+  guard.classList.add("hidden");
+  content.classList.remove("hidden");
+
   state.dbTables = await api("/api/db/tables");
   const list = document.getElementById("dbTablesList");
   list.innerHTML = state.dbTables
@@ -985,6 +1026,10 @@ function setLoginRole(role) {
     submitBtn.textContent = "Login as Publisher";
     idInput.placeholder = "Publisher Username (e.g. valve_pub)";
     hintEl.innerHTML = `Demo Publishers: <code>valve_pub</code>, <code>cdpr_pub</code>, <code>supergiant_pub</code> · Password: <code>password123</code>`;
+  } else if (role === "admin") {
+    submitBtn.textContent = "Login as Platform Admin";
+    idInput.placeholder = "Admin Username (e.g. admin)";
+    hintEl.innerHTML = `Demo Platform Admin: <code>admin</code> · Password: <code>password123</code>`;
   } else {
     submitBtn.textContent = "Login as User";
     idInput.placeholder = "Username or Member ID (e.g. 1)";
@@ -1114,8 +1159,13 @@ function bindEvents() {
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await api("/api/auth/logout", { method: "POST" });
     state.cart = [];
+    state.dbTables = [];
     updateCartBadge();
     document.getElementById("loginIdNotice").classList.add("hidden");
+    document.getElementById("dbTablesList").innerHTML = "";
+    document.getElementById("tableColumnsChips").innerHTML = "";
+    document.getElementById("tableRowsWrap").innerHTML = "";
+    document.getElementById("sqlResultWrap").innerHTML = "";
     await refreshUserData();
     toast("Logged out.");
   });

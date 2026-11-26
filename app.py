@@ -71,6 +71,16 @@ def _require_publisher():
     return int(uid), int(pub_id), None
 
 
+def _require_admin():
+    uid = session.get("user_id")
+    role = session.get("role")
+    if not uid:
+        return None, _error("Platform Admin login required.", 401)
+    if role != "admin":
+        return None, _error("Forbidden: only Platform Admin can access Data Explorer.", 403)
+    return int(uid), None
+
+
 def _compute_effective_price(base_price, discount_pct):
     base = Decimal(str(base_price))
     if not discount_pct:
@@ -111,8 +121,8 @@ def auth_login():
     identifier = str(data.get("identifier") or data.get("user_id") or "").strip()
     password = data.get("password") or ""
     account_type = (data.get("account_type") or "user").strip().lower()
-    if account_type not in ("user", "publisher"):
-        return _error("Account type must be 'user' or 'publisher'.")
+    if account_type not in ("user", "publisher", "admin"):
+        return _error("Account type must be 'user', 'publisher', or 'admin'.")
     if not identifier or not password:
         return _error("Username (or Member ID) and password are required.")
 
@@ -133,9 +143,10 @@ def auth_login():
             return _error("Invalid credentials or password.", 401)
 
         if user["role"] != account_type:
-            expected_label = "Publisher" if user["role"] == "publisher" else "User"
+            role_labels = {"user": "User", "publisher": "Publisher", "admin": "Platform Admin"}
+            expected_label = role_labels.get(user["role"], user["role"])
             return _error(
-                f"This account is registered as a {expected_label}. Please choose '{expected_label}' to log in.",
+                f"This account is registered as {expected_label}. Please choose '{expected_label}' to log in.",
                 403,
             )
 
@@ -283,6 +294,21 @@ def auth_me():
             )
             published_games = int(cur.fetchone()["cnt"])
 
+        admin_stats = {}
+        if user["role"] == "admin":
+            cur.execute("SELECT COUNT(*) AS cnt FROM USERS")
+            total_users = int(cur.fetchone()["cnt"])
+            cur.execute("SELECT COUNT(*) AS cnt FROM GAMES")
+            total_games = int(cur.fetchone()["cnt"])
+            cur.execute("SELECT COUNT(*) AS cnt FROM ORDERS")
+            total_orders = int(cur.fetchone()["cnt"])
+            admin_stats = {
+                "total_tables": len(ALLOWED_TABLES),
+                "total_users": total_users,
+                "total_games": total_games,
+                "total_orders": total_orders,
+            }
+
         return jsonify({
             "authenticated": True,
             "user": serialize_row(user),
@@ -293,6 +319,7 @@ def auth_me():
                 "friend_count": int(friends["friend_count"]),
                 "unlocked_achievements": int(ach["unlocked_achievements"]),
                 "published_games": published_games,
+                **admin_stats,
             },
         })
 
@@ -1150,6 +1177,9 @@ def create_achievement():
 # ---------------------------------------------------------------------------
 @app.route("/api/db/tables", methods=["GET"])
 def list_db_tables():
+    _, err = _require_admin()
+    if err:
+        return err
     with db_cursor() as (_, cur):
         tables = []
         for tbl in sorted(ALLOWED_TABLES):
@@ -1170,6 +1200,9 @@ def list_db_tables():
 
 @app.route("/api/db/tables/<table_name>", methods=["GET"])
 def inspect_table(table_name):
+    _, err = _require_admin()
+    if err:
+        return err
     tbl = table_name.lower()
     if tbl not in ALLOWED_TABLES:
         return _error("Unknown table name.", 404)
@@ -1187,6 +1220,9 @@ def inspect_table(table_name):
 
 @app.route("/api/db/query", methods=["POST"])
 def run_readonly_query():
+    _, err = _require_admin()
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     sql = (data.get("sql") or "").strip()
     if not sql:

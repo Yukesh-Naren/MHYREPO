@@ -67,7 +67,8 @@ INSERT INTO USERS (user_id, username, email, password_hash, role, publisher_id, 
 (6, 'sara_chen', 'sara@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'user', NULL, 5100.80, 'Canada', '2025-01-04 16:40:00'),
 (7, 'valve_pub', 'valve@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'publisher', 1, 0.00, 'USA', '2023-01-01 09:00:00'),
 (8, 'cdpr_pub', 'cdpr@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'publisher', 2, 0.00, 'Poland', '2023-01-01 09:00:00'),
-(9, 'supergiant_pub', 'supergiant@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'publisher', 4, 0.00, 'USA', '2023-01-01 09:00:00');
+(9, 'supergiant_pub', 'supergiant@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'publisher', 4, 0.00, 'USA', '2023-01-01 09:00:00'),
+(10, 'admin', 'admin@ferroy.io', 'scrypt:32768:8:1$6GOOMpmt2bBr3BM0$f5b262259419bcf308acf497fb17d7c4a2c9fe292aa3aac8edd8bfc82c9eac12b191b6e043621297298f22e47021fbff86d62819d2227e3215b42554bbcafaa2', 'admin', NULL, 0.00, 'India', '2023-01-01 09:00:00');
 
 -- 5. FRIENDSHIPS
 INSERT INTO FRIENDSHIPS (user_id, friend_id, status, created_at) VALUES
@@ -237,7 +238,7 @@ INSERT INTO GAME_TAGS (game_id, tag_id) VALUES
 ALTER TABLE PUBLISHERS AUTO_INCREMENT = 8;
 ALTER TABLE DEVELOPERS AUTO_INCREMENT = 9;
 ALTER TABLE GAMES AUTO_INCREMENT = 13;
-ALTER TABLE USERS AUTO_INCREMENT = 10;
+ALTER TABLE USERS AUTO_INCREMENT = 11;
 ALTER TABLE ORDERS AUTO_INCREMENT = 8;
 ALTER TABLE WALLET_TRANSACTIONS AUTO_INCREMENT = 12;
 ALTER TABLE ORDER_ITEMS AUTO_INCREMENT = 12;

@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS USERS (
     CONSTRAINT fk_users_publisher
         FOREIGN KEY (publisher_id) REFERENCES PUBLISHERS(publisher_id)
         ON UPDATE CASCADE ON DELETE SET NULL,
-    CONSTRAINT chk_users_role CHECK (role IN ('user', 'publisher')),
+    CONSTRAINT chk_users_role CHECK (role IN ('user', 'publisher', 'admin')),
     CONSTRAINT chk_users_wallet CHECK (wallet_balance >= 0)
 ) ENGINE=InnoDB;
 
